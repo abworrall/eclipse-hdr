@@ -28,7 +28,7 @@ and use `exiftool -TagsFromFile orig new` to copy it over.
 
 ## Config file
 
-Your input TIFF files should be a in directory, along with a config
+Your input TIFF files should be in a directory, along with a config
 file called `stack.yaml`.
 
 - gamma: we use a simple gamma to do output tone mapping. Values
@@ -139,6 +139,12 @@ assumption that they are overflowing.
 
 There are a range of algorithms here, as listed above in the config
 section. In practice, I just use `bestexposed` all the time.
+
+This should really be done using Laplacian pyramids, difference
+images, etc:
+- http://www.cs.technion.ac.il/~ronrubin/Projects/fusion/index.html
+- http://www.cs.toronto.edu/~jepson/csc320/notes/pyramids.pdf
+
 
 ### Tone mapping
 
