@@ -3,18 +3,28 @@ package estack
 import (
 	"fmt"
 	"image"
+	"path/filepath"
 )
 		
 // A StackedImage is an Image with extra methods that allow us to do exposure stacking.
 type StackedImage struct {
-	Filename string
+	LoadFilename       string
+	OrigImage          image.Image  // The original photo image
+	ExposureValue                   // The exposure value for the photo
 
-	image.Image // The pixel data
+	LunarLimb                       // Our guess at where the moon is in the photo
+	AlignmentTransform              // How to map a point from the base image into this image
 
-	ExposureValue // The exposure value for the photo
-	Offset image.Point // How offset this photo is from the first in the series
+	// A pixel location at XImage[x,y] should refer to the same sky position across all stackedimages
+	XImage             image.Image
 }
 
 func (si StackedImage)String() string {
-	return fmt.Sprintf("image '%s' - %s offset%v", si.Filename, si.ExposureValue, si.Offset)
+	return fmt.Sprintf("%s: %s, xform%s, lunar radius %d, lunar brightness 0x%004x",
+		si.Filename(), si.ExposureValue.String(),
+		si.AlignmentTransform, si.LunarLimb.Radius(), si.LunarLimb.Brightness)
+}
+
+func (si StackedImage)Filename() string {
+	return filepath.Base(si.LoadFilename)
 }

@@ -1,97 +1,126 @@
 package estack
 
-import(
-	"fmt"
-	"image"
-	"io/ioutil"
-
-	"gopkg.in/yaml.v2"
-)
-
 /* Example config file ...
 
+The ForwardMatrix is a 3x3, a row at a time; the example below corresponds to:
+		MyMat3{
+			0.6227,   0.3389,   0.0026,
+			0.2548,   0.9378,  -0.1926,
+			0.0156,  -0.1330,   0.9425,
+		}
+
+asshotneutral:
+- 0.501
+- 1
+- 0.7014
+forwardmatrix:
+- 0.6227
+- 0.3389
+- 0.0026
+- 0.2548
+- 0.9378
+- -0.1926
+- 0.0156
+- -0.133
+- 0.9425
 rendering:
   outputfilename: out.png
-  gamma: 0.25
-  maxcandles: 512
-  combinerstrategy: quad
-  bounds:
-    min:
-      x: 500
-      y: 500
-    max:
-      x: 1500
-      y: 1500
-
-alignment:
-  5662.tif: [  0,  0]
-  5663.tif: [ -5,  0]
-  5664.tif: [ -7,  3]
-  5665.tif: [-10,  5]
-  5666.tif: [-14,  6]
+  outputwidthinsolardiameters: 3
+  aligneclipse: true
+  alignmentfinetune: false
+  applygammaexpansion: true
+  fuserstrategy: mostexposed
+  tonemapperstrategy: linear
+  colortweakerstrategy: ""
 
 */
 
+import(
+	"log"
+	"gopkg.in/yaml.v2"
+)
+
 type RenderOptions struct {
-	// Values from command line
-	OutputFilename      string
-	Gamma               float64
-	MaxCandles          float64
-	CombinerStrategy    string
-	RadialExponent      float64
-	SolarRadiusPixels   int
+	OutputFilename              string
+	OutputWidthInSolarDiameters float64
 
-	// Values we derive/compute
-	Combiner            CombinerFunc
-	Bounds              image.Rectangle  // The part of the base image we process
+	AlignEclipse                bool
+	AlignmentFineTune           bool
 
-	// Hack values
-	SelectJustThisLayer int // used by a hack combiner
+	DNGDevelop                  bool
+	ApplyGammaExpansion         bool
+
+	FuserStrategy               string
+	TonemapperStrategy          string
+	ColorTweakerStrategy        string
 }
 
 type Configuration struct {
-	Rendering    RenderOptions
-	Alignment    AlignmentData
-	Exclude      []string
+	AsShotNeutral      MyVec3
+	ForwardMatrix      MyMat3
+
+	Rendering          RenderOptions
+
+	Alignments         map[string]AlignmentTransform
+}
+
+func NewConfigurationFromYaml(b []byte) (Configuration, error) {
+	c := NewConfiguration()
+	err := yaml.Unmarshal(b, &c)
+	return c, err
+}
+
+func (c Configuration)AsYaml() string {
+	b, err := yaml.Marshal(c)
+	if err != nil {
+		log.Fatal("Can't marshal config yaml: %v\n", err)
+	}
+	return string(b)
 }
 
 func NewConfiguration() Configuration {
 	return Configuration{
-		Alignment: NewAlignmentData(),
-		Exclude: []string{},
+		// These values are found in the text output of `dng_validate.exe
+		// -v`. Note I'm picking the second illuminant, D65, since its
+		// direct sunlight; so we use ForwardMatrix2. I'm just hardwiring
+		// them in here.
+		AsShotNeutral: MyVec3{0.5010, 1.0000, 0.7014},
+		ForwardMatrix: MyMat3{
+			0.6227,   0.3389,   0.0026,
+			0.2548,   0.9378,  -0.1926,
+			0.0156,  -0.1330,   0.9425,
+		},
+		Alignments: map[string]AlignmentTransform{},
 	}
 }
 
-func LoadConfiguration(filename string) (Configuration, error) {
-	c := NewConfiguration()
-
-	if contents,err := ioutil.ReadFile(filename); err != nil {
-		return c, fmt.Errorf("read '%f': %v", filename, err)
-	} else if err := yaml.Unmarshal([]byte(contents), &c); err != nil {
-		return c, fmt.Errorf("parse '%f': %v", filename, err)
-	}
-
-	return c, c.FinalizeConfiguration()
-}
-
-// FinalizeConfiguration does sanity checks and other post-processing
-func (c *Configuration)FinalizeConfiguration() error {
-	if c.Rendering.CombinerStrategy == "" {
-		c.Rendering.CombinerStrategy = "hdr"
-	}
-
-	switch c.Rendering.CombinerStrategy {
-	// These three are for debugging, and figuring out alignments
-	case "distinct":   c.Rendering.Combiner = MergeDistinct
-	case "quad":       c.Rendering.Combiner = MergeQuadrantsLuminance
-	case "bullseye":   c.Rendering.Combiner = MergeBullseye
-
-	case "average":    c.Rendering.Combiner = MergeAverage
-	case "hdr":        c.Rendering.Combiner = MergeHDR
-	case "bestexposed":c.Rendering.Combiner = MergeBestExposed
+func (c *Configuration)GetFuser() PixelFunc {
+	switch c.Rendering.FuserStrategy {
+	case "mostexposed": return FuseBySingleMostExposed
+	case "sector":      return FuseBySector
+	case "avg":         return FuseByAverage
 	default:
-		return fmt.Errorf("no CombinationStrategy named'%s'", c.Rendering.CombinerStrategy)
+		log.Fatalf("no FuserStrategy named '%s'", c.Rendering.FuserStrategy)
+		return nil
 	}
-	
-	return nil
+}
+
+func (c *Configuration)GetTonemapper() GlobalTonemapper {
+	switch c.Rendering.TonemapperStrategy {
+	case "fattal02":  return TonemapFattal02
+	case "linear":    return TonemapLinear
+	default:
+		log.Fatalf("no ToneMapperStrategy named '%s'", c.Rendering.TonemapperStrategy)
+		return nil
+	}
+}
+
+func (c *Configuration)GetColorTweaker() PixelFunc {	
+	switch c.Rendering.ColorTweakerStrategy {
+	case "layer": return ColorTweakByLayer
+	case "":      return nil
+	default:
+		log.Fatalf("no ColorTweakStrategy named '%s'", c.Rendering.ColorTweakerStrategy)
+		return nil
+	}
 }

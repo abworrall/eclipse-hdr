@@ -2,7 +2,6 @@ package main
 
 import(
 	"flag"
-	"fmt"
 	"log"
 	"os"
 
@@ -12,75 +11,67 @@ import(
 var(
 	Log *log.Logger
 
-	fStackDir string
-	fOutput string
-	fCombinerStrategy string
-	fMaxCandles float64
-	fGamma  float64
-
-	fAlignSlideshow bool
+	fOutputFilename string
+	fOutputWidth float64
+	fAlignEclipse bool
+	fAlignFineTune bool
+	fDNGDevelop bool
+	fFuserStrategy string
+	fTonemapperStrategy string
+	fColorTweakerStrategy string
+	fGamma bool
 )
 
 func init() {
+	flag.StringVar(&fOutputFilename, "o", "out.png", "name of output image file")
+	flag.Float64Var(&fOutputWidth, "width", 5, "width of output image, in solar diameters")
+	flag.BoolVar(&fAlignEclipse, "aligneclipse", true, "assume pics are of an eclipse, and try to align them")
+	flag.BoolVar(&fAlignFineTune, "alignfinetune", false, "do a very slow pass to finetune image alignment")
+	flag.BoolVar(&fDNGDevelop, "develop", true, "apply DNG color corrections (ForwardMatrix etc)")
+
+	flag.StringVar(&fFuserStrategy, "fuser", "mostexposed", "how to fuse the exposures into one HDR exposure")
+	flag.StringVar(&fTonemapperStrategy, "tonemapper", "fattal02", "how to tonemap luminances to output pixels")
+	flag.StringVar(&fColorTweakerStrategy, "colorer", "", "how to color pixels in the final image")
+	flag.BoolVar(&fGamma, "gamma", true, "Apply sRGB standard gamma expansion on final image")
+	flag.Parse()
+
 	Log = log.New(os.Stdout,"", log.Ldate|log.Ltime)//log.Lshortfile
-	Log.Printf("(starting estacker)\n")
-
-	//flag.StringVar(&fConfigFile, "stack.yaml", "", "a YAML file of config data")
-	flag.StringVar(&fStackDir, "d", ".", "the dir with the TIFFs and the stack.yaml")
-
-	flag.StringVar(&fOutput, "output", "", "name of output image")
-
-	flag.StringVar(&fCombinerStrategy, "combine", "", "how to combine images")
-	flag.Float64Var(&fMaxCandles, "maxcandles", 0, "The level of illumination we consider 'white'")
-	flag.Float64Var(&fGamma, "gamma", 0, "The encoding gamma level (<1)")
-	flag.BoolVar(&fAlignSlideshow, "alignslideshow", false, "generate an alignment slideshow")
-	flag.Parse() // https://gobyexample.com/command-line-flags
-}
-
-func alignSlideshow(in estack.Stack) {
-	for layer:=0; layer<len(in.Images); layer++ {
-		s := in
-		s.Rendering.Combiner = estack.SelectFromOneLayer
-		s.Rendering.SelectJustThisLayer = layer
-		s.Rendering.OutputFilename = fmt.Sprintf("align-layer-%02d.png", layer)
-		if err := s.RenderOutputFile(); err != nil {
-			Log.Fatal("Rendering failed: %v\n", err)
-		}
-		Log.Printf("Output file written '%s'\n", s.Rendering.OutputFilename)
-	}
+	log.Printf("Starting\n")
 }
 
 func main() {
-	s,err := estack.LoadStackDir(fStackDir)
-	if err != nil {
+	s := estack.NewStack()
+	if err := s.Load(flag.Args()...); err != nil {
 		Log.Fatal(err)
 	}
 
 	// Override the config file with command line args, if relevant
-	if fOutput != "" { s.Rendering.OutputFilename = fOutput }
-	if fGamma > 0.0 { s.Rendering.Gamma = fGamma }
-	if fMaxCandles > 0.0 { s.Rendering.MaxCandles = fMaxCandles }
-	if fCombinerStrategy != "" {
-		s.Rendering.CombinerStrategy = fCombinerStrategy
-	}
-	if err := s.Configuration.FinalizeConfiguration(); err != nil {
-		Log.Fatalf("bad config: %v\n", err)
+	if fOutputFilename != "" { s.Rendering.OutputFilename = fOutputFilename }
+	if fOutputWidth > 0.0 { s.Rendering.OutputWidthInSolarDiameters = fOutputWidth }
+	if fFuserStrategy != "" { s.Rendering.FuserStrategy = fFuserStrategy }
+	if fTonemapperStrategy != "" { s.Rendering.TonemapperStrategy = fTonemapperStrategy }
+	if fColorTweakerStrategy != "" { s.Rendering.ColorTweakerStrategy = fColorTweakerStrategy }
+
+	// Just set the bool vars
+	s.Rendering.AlignEclipse = fAlignEclipse
+	s.Rendering.AlignmentFineTune = fAlignFineTune
+	s.Rendering.DNGDevelop = fDNGDevelop
+	s.Rendering.ApplyGammaExpansion = fGamma
+
+	if err := s.AlignAllImages(); err != nil {
+		log.Fatalf("AlignImages failed, err: %v\n", err)
 	}
 
-	if err := s.AlignImages(); err != nil {
-		Log.Fatalf("AlignImages: %v\n", err)
-	}
-	Log.Printf("(images aligned)\n")
+	log.Printf("Images loaded: %s", s)
+	//log.Printf("Final configuration:-\n\n%s\n", s.Configuration.AsYaml())
 
-	Log.Printf("loaded a stackdir:-\n%s", s)
+	s.FuseExposures()
 
-	if fAlignSlideshow {
-		alignSlideshow(s)
-		return
-	}
+	s.Playtime() // FIXME
+
+	s.Tonemap()
+	s.DevelopAndPublish()
 	
-	if err := s.RenderOutputFile(); err != nil {
-		Log.Fatal("Rendering failed: %v\n", err)
-	}
-	Log.Printf("Output file written '%s'\n", s.Rendering.OutputFilename)
+	estack.WritePNG(s.CompositeLDR, s.Rendering.OutputFilename)
+	log.Printf("LDR output file written '%s'\n", s.Rendering.OutputFilename)
 }

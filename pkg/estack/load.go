@@ -3,67 +3,90 @@ package estack
 import (
 	"fmt"
 	"io/ioutil"
+	"log"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/rwcarlsen/goexif/exif"
 	"golang.org/x/image/tiff"
 )
 
-// {{{ LoadStackDir
+func (s *Stack)Load(args ...string) error {	
+	for _, arg := range args {
+		item, err := os.Stat(arg)
 
-// A 'stack dir' should contain a stack.yaml file (with config), and a bunch of TIFF files.
-func LoadStackDir(d string) (Stack,error) {
-	s := NewStack()
-	
-	files, err := ioutil.ReadDir(d)
-	if err != nil {
-		return s, fmt.Errorf("reading stackdir '%s': %v", d, err)
-	}
+		switch {
 
-	cfg,err := LoadConfiguration(filepath.Join(d, "stack.yaml"))
-	if err != nil {
-		return s, fmt.Errorf("Config error: %v", err)
-	}
-	s.Configuration = cfg
-	fmt.Printf("(loaded config)\n");
+		case err != nil:
+			return fmt.Errorf("load %s: %v", arg, err)
 
-	excluded :=map[string]int{}
-	for _,f := range cfg.Exclude { excluded[f] = 1 }
-	fmt.Printf("(excluding images %v)\n", excluded);	
-	
-	for _, f := range files {
-		if _,exists := excluded[f.Name()]; exists {
-			continue
-		}
-		ext := filepath.Ext(f.Name())
-		if ext == ".tif" || ext == ".TIF" {
-			if si, err := LoadTIFF(filepath.Join(d, f.Name())); err != nil {
-				return s, fmt.Errorf("Loading failed: %v", err)
-			} else {
-				si.Filename = f.Name()
-				s.Add(si)
-				fmt.Printf("(loaded image %s)\n", f.Name());
+		case item.IsDir():
+			// Is a dir, recurse into contents
+			contents, err := ioutil.ReadDir(arg)
+			if err != nil {
+				return fmt.Errorf("readdir %s: %v", arg, err)
+			}
+			for _, content := range contents {
+				if err := s.Load(filepath.Join(arg, content.Name())); err != nil {
+					return fmt.Errorf("load %s: %v", arg, err)
+				}
+			}
+
+		default: // is a file, load it
+			if err := s.LoadFile(arg); err != nil {
+				return fmt.Errorf("loadfile %s: %v", arg, err)
 			}
 		}
 	}
-	
-	// Default bounds to the first input image
-	if cfg.Rendering.Bounds.Dx() == 0 || cfg.Rendering.Bounds.Dy() == 0 {
-			s.Configuration.Rendering.Bounds = s.Images[0].Bounds() // 4298 x 3280
-	}
 
-	return s,nil
+	return nil
 }
 
-// }}}
-// {{{ LoadTIFF
+func (s *Stack)LoadFile(filename string) error {
+	ext := filepath.Ext(filename)
+
+	switch strings.ToLower(ext) {
+
+	case ".tif":
+		si, err := LoadTIFF(filename)
+		if err != nil {
+			return fmt.Errorf("Loading %s as TIFF failed: %v", filename, err)
+		}
+		s.Add(si)
+
+	case ".yaml":
+		cfg, err := LoadConfiguration(filename)
+		if err != nil {
+			return fmt.Errorf("Loading %s as config YAML failed: %v", filename, err)
+		}
+		s.Configuration = cfg
+		log.Printf("Loaded base configuration from %s\n", filename)
+	}
+
+	return nil
+}
+
+
+func LoadConfiguration(filename string) (Configuration, error) {
+	contents, err := ioutil.ReadFile(filename)
+	if err != nil {
+		return Configuration{}, fmt.Errorf("config read %s: %v", filename, err)
+	}
+
+	return NewConfigurationFromYaml(contents)
+}
+
+
+/*type TiffDumpWalker struct {}
+func (tdw TiffDumpWalker)Walk(name exif.FieldName, tag *exiftiff.Tag) error {
+	fmt.Printf("EXIF tag: %-30.30s: %s\n", name, tag)
+	return nil
+}*/
 
 func LoadTIFF(filename string) (StackedImage, error) {
-	si := StackedImage{Filename: filename}
+	si := StackedImage{LoadFilename: filename}
 
-	imgFilename := filename
-	
 	// First, try to load the EXIF metadata.
 	if reader, err := os.Open(filename); err != nil {
 		return si, fmt.Errorf("open+r exif '%s': %v", filename, err)
@@ -72,6 +95,8 @@ func LoadTIFF(filename string) (StackedImage, error) {
 		return si, fmt.Errorf("exif parsing '%s': %v", filename, err)
 
 	} else {
+		//ex.Walk(TiffDumpWalker{})
+
 		if tag,err := ex.Get(exif.ISOSpeedRatings); err != nil {
 			return si, fmt.Errorf("exif ISO '%s': %v", filename, err)
 		} else if val,err := tag.Int64(0); err != nil {
@@ -102,7 +127,8 @@ func LoadTIFF(filename string) (StackedImage, error) {
 			si.ShutterSpeed = rational{num,denom}
 		}
 
-		// TODO: extract exposure compensation value
+		// Note: we ignore Exposure Compensation, as it is informational. The
+		// Fstop/Speed/ISO triple fully defines how much light should expose a pixel.
 		
 		if err := si.ExposureValue.Validate(); err != nil {
 			return si, fmt.Errorf("image '%s' EV: %v", filename, err)
@@ -110,18 +136,16 @@ func LoadTIFF(filename string) (StackedImage, error) {
 	}
 
 	// Re-open the file, now for the image data
-	if reader, err := os.Open(imgFilename); err != nil {
-		return si, fmt.Errorf("open+r img '%s': %v", imgFilename, err)
+	if reader, err := os.Open(filename); err != nil {
+		return si, fmt.Errorf("open+r img '%s': %v", filename, err)
 	} else if img, err := tiff.Decode(reader); err != nil {
-		return si, fmt.Errorf("tiff loading '%s': %v", imgFilename, err)
+		return si, fmt.Errorf("tiff loading '%s': %v", filename, err)
 	} else {
-		si.Image = img
+		si.OrigImage = img
 	}
-
+	
 	return si, nil
 }
-
-// }}}
 
 // {{{ -------------------------={ E N D }=----------------------------------
 

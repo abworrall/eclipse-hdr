@@ -1,126 +1,76 @@
 package estack
 
-// The goroutine nonsense to process the stack and generate output pixels. The output image
-// data structure is not thread safe.
-
 import(
 	"fmt"
 	"image"
-	"image/color"
 	"image/png"
+	"log"
 	"os"
-	"sync"
-	"time"
 )
 
-var(
-	nWorkers = 24
-)
+func (s *Stack)FuseExposures() {
+	inBbox := s.InputArea
+	outBbox := image.Rectangle{Max:image.Point{inBbox.Dx(), inBbox.Dy()}}  // output coords: [0,0] -> [max,max]
 
-// An ImgWrite is the instruction that a sliveworker sends to the writeworker
-type ImgWrite struct {
-	c color.Color
-	x,y int
+	s.OutputArea = outBbox
+	
+	s.Pixels = make([][]*PixelWorkspace, outBbox.Dx())	
+	for x := 0; x < outBbox.Dx(); x++ {
+		s.Pixels[x] = make([]*PixelWorkspace, outBbox.Dy())
+	}
+
+	log.Printf("FuseExposures: iterating over %s\n", s.OutputArea)
+	
+	// Iterate over pixels, apply the given algo to fuse each one
+	for x := inBbox.Min.X; x < inBbox.Max.X; x++ {
+		for y := inBbox.Min.Y; y < inBbox.Max.Y; y++ {
+			ws := s.GetPixelWorkspaceForInputAt(x,y)
+			ws.FuseExposures()
+			
+			ws.OutputPos = image.Point{x-inBbox.Min.X, y-inBbox.Min.Y}
+			s.Pixels[ws.OutputPos.X][ws.OutputPos.Y] = ws
+		}
+	}
 }
 
-// {{{ s.RenderOutputFile
+func (s *Stack)Tonemap() {
+	tmo := s.Configuration.GetTonemapper()
+	tmo(s)
+}
 
-func (s *Stack)RenderOutputFile() error {	
-	if img,err := s.GenerateOutputImage(); err != nil {
-		return err
-	} else if writer,err := os.Create(s.Rendering.OutputFilename); err != nil {
-		return fmt.Errorf("open+w '%s': %v", s.Rendering.OutputFilename, err)
+func (s *Stack)DevelopAndPublish() {
+	s.CompositeLDR = image.NewRGBA64(s.OutputArea)
+
+	for x := 0; x < s.OutputArea.Dx(); x++ {
+		for y := 0; y < s.OutputArea.Dy(); y++ {
+			ws := s.Pixels[x][y]
+			ws.DNGDevelop()    // 3. Apply the DNG Develop algo                      (TonemappedRGB -> DevelopedRGB)
+		}
+	}
+
+	for x := 0; x < s.OutputArea.Dx(); x++ {
+		for y := 0; y < s.OutputArea.Dy(); y++ {
+			ws := s.Pixels[x][y]
+
+			ws.Publish()       // 4. Publish an output pixel (e.g. apply sRGB gamma) (DevelopedRGB -> Output)
+			ws.ColorTweaks()   // 5. Final tweaks to pixels, for debugging           (Output -> Output)
+
+			if DebugPixels != nil {
+				if _, exists := DebugPixels[image.Point{x, y}]; exists {
+					ws.DebugDump()
+				}
+			}
+
+			s.CompositeLDR.Set(x, y, ws.Output)
+		}
+	}
+}
+
+func WritePNG(img image.Image, filename string) error {
+	if writer, err := os.Create(filename); err != nil {
+		return fmt.Errorf("open+w '%s': %v", filename, err)
 	} else {
 		defer writer.Close()
 		return png.Encode(writer, img)
 	}
 }
-
-// }}}
-// {{{ s.GenerateOutputImage
-
-func (s Stack)GenerateOutputImage() (image.Image, error) {	
-	tStart := time.Now();
-
-	var wg sync.WaitGroup
-	var writesChan = make(chan ImgWrite, 32)
-
-	img := image.NewRGBA(s.Rendering.Bounds) // This is the subarea we're rendering
-	go writeWorker(img, writesChan)
-
-	width := img.Bounds().Dx()
-	height := img.Bounds().Dy()
-
-	jobWidth := width / nWorkers
-	remainder := (jobWidth % nWorkers)
-	
-	wg.Add(nWorkers)
-
-	for i:=0; i<nWorkers; i++ {
-		width := jobWidth
-		if i == nWorkers-1 { width += remainder } // last worker picks up remainder
-
-		// Describe the vertical stripe (of s.Bounds) each worker will get to work on
-		min := image.Point{
-			X: s.Rendering.Bounds.Min.X + i*jobWidth,
-			Y: s.Rendering.Bounds.Min.Y,
-		}
-		max := image.Point{
-			X: min.X+width,
-			Y: s.Rendering.Bounds.Max.Y,
-		}
-		
-		go func(area image.Rectangle) {
-			s.generateSliceWorker(writesChan, area)
-			defer wg.Done()
-		}(image.Rectangle{Min:min, Max:max})
-	}
-
-	wg.Wait()
-	close(writesChan)
-	
-	fmt.Printf("(renderoptions: %#v)\n", s.Rendering)
-	fmt.Printf("(%dx%d - took %s, with %d workers)\n", width, height, time.Since(tStart), nWorkers)
-
-	for _,hist := range Hists {
-		fmt.Printf("%s\n", hist)
-	}
-	
-	return img, nil
-}
-
-// }}}
-
-// {{{ writeWorker
-
-// This goroutine gates write access to the output image (the data structure is not thread safe)
-func writeWorker(img *image.RGBA, writesChan <-chan ImgWrite) {
-	for {
-		write, moreToCome := <-writesChan
-		if !moreToCome { return }
-		img.Set(write.x, write.y, write.c)
-	}
-}
-
-// }}}
-// {{{ generateSliceWorker
-
-// This goroutine iterates over the pixels in its subarea, processes them, and submits them
-// to the writeWorker.
-func (s Stack) generateSliceWorker(writes chan<-ImgWrite, area image.Rectangle) {
-	for x := area.Min.X; x < area.Max.X; x++ {
-		for y := area.Min.Y; y < area.Max.Y; y++ {
-			writes<- ImgWrite{s.CombineImagesAt(x,y), x, y}
-		}
-	}
-}
-
-// }}}
-
-// {{{ -------------------------={ E N D }=----------------------------------
-
-// Local variables:
-// folded-file: t
-// end:
-
-// }}}

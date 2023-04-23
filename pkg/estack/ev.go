@@ -6,9 +6,24 @@ import (
 
 type rational [2]int64
 
+
+// An ExposureValue details how the photograph was exposed, and allows
+// us to figure out how much physical illumination (cd/m^2) was
+// hitting the sensor, given a pixel color from the image.
+type ExposureValue struct {
+	ISO                        int64    // 100, 800, etc.
+	ApertureX10                int64    // f/5.6 is the integer 56.
+	ShutterSpeed               rational // 1/500, 1/1000, etc.
+
+	EV                         int64    // The final EV value
+
+	IlluminanceAtMaxExposure   float64  // How many lux generate a channel exposure >= 0xFFFF
+}
+
+
 var(
-	// Hand pick values I need right now
-	// https://en.wikipedia.org/wiki/Exposure_value
+	// A quick lookup from the Fstop & shutterspeed into one of the
+	// standard EV numbers (they all assume ISO100; https://en.wikipedia.org/wiki/Exposure_value)
 	EVLookup = map[int64]map[rational]int64{ // [FnumberX10][ShutterSpeed] == EV
 		56: map[rational]int64{
 			rational{1,2000} : 16,
@@ -16,6 +31,11 @@ var(
 			rational{1, 500} : 14,
 			rational{1, 250} : 13,
 			rational{1, 125} : 12,
+
+			// FFS, FIXME, DELETEME
+			rational{1, 320} : 13,
+			rational{1,  80} : 11,
+			rational{1,  20} :  9,
 		},
 
 		110: map[rational]int64{
@@ -31,53 +51,38 @@ var(
 		},
 	}
 
-	// How much physical light is needed to fully expose a pixel, in cd/m^2, for a given EV value
-	LuminanceLookup = map[int64]int64{
-		6:      8,
-		7:     16,
-		8:     32,
-		9:     64,
-		10:   128,
-		11:   256,
-		12:   512,
-		13:  1024,
-		14:  2048,
-		15:  4096,
-		16:  8192,
-		17: 16384,
-		18: 32768,
+	// https://en.wikipedia.org/wiki/Exposure_value#EV_as_a_measure_of_luminance_and_illuminance
+	// Maps the EV to Illuminance, the max incident illumination at the
+	// sensor, measured in Lux (lumens/m^2).
+	illuminanceLookup = map[int64]float64 {
+		6:	   160.0,
+		7:     320.0,
+		8:     640.0,
+		9:    1280.0,
+		10:   2560.0,
+		11:   5120.0,
+		12:	 10240.0,
+		13:	 20480.0,
+		14:	 40960.0,
+		15:	 81920.0,
+		16:	163840.0,
+		17:	327680.0,
+		18:	655360.0,
 	}
 )
-
-// An ExposureValue represents how the photograph was exposed, and
-// from that can derive some absolute measure of how much light was
-// needed to fully expose a pixel (in candles/m^2)
-type ExposureValue struct {
-	ISO                 int64    // 100, 800, etc.
-	ApertureX10         int64    // e.g. f/5.6 is the integer 56.
-	ShutterSpeed        rational // .
-	ExposureComp        int64    // in F-stops. Fractional stops not supported.
-
-	EV                  int64    // The final EV value
-	MaxLuminance        int64    // ... and the luminance it corresponds to
-}
 
 func (ev ExposureValue)String() string {
 	s := fmt.Sprintf("f/%.1f", float32(ev.ApertureX10)/10.0)
 
 	if ev.ShutterSpeed[1] != 1 {
-		s += fmt.Sprintf(", %d/%d", ev.ShutterSpeed[0], ev.ShutterSpeed[1])
+		s += fmt.Sprintf(", %d/%4d", ev.ShutterSpeed[0], ev.ShutterSpeed[1])
 	} else {
 		s += fmt.Sprintf(", %d", ev.ShutterSpeed[0])
 	}
 
 	s += fmt.Sprintf(", ISO%d", ev.ISO)
 
-	if ev.ExposureComp != 0 {
-		s += fmt.Sprintf("+%d stops ", ev.ExposureComp)
-	}
-
-	return s + fmt.Sprintf(" : EV %d (%d cd/m^2)", ev.EV, ev.MaxLuminance)
+	return s + fmt.Sprintf(", EV %2d (%6.0f lux)", ev.EV, ev.IlluminanceAtMaxExposure)
 }
 
 func (ev *ExposureValue)Validate() error {
@@ -88,7 +93,11 @@ func (ev *ExposureValue)Validate() error {
 		return fmt.Errorf("(%s) had unhandled shutterspeed", ev)
 
 	} else {
-		// Adjust for ISO; the higher the ISO, the less physical light needed to fully expose
+		// Adjust for ISO; the higher the ISO, the less physical light
+		// needed to fully expose. (As ISO goes up, the camera generally
+		// just waits for less time, and just multiplies the photon-count
+		// to balance out - so you're buying a quicker shutter speed by
+		// getting a more and more approximate photon count.)
 		switch ev.ISO {
 		case  100:
 		case  200: base -= 1
@@ -98,12 +107,10 @@ func (ev *ExposureValue)Validate() error {
 		case 3200: base -= 5
 		default: return fmt.Errorf("(%s) had unhandled ISO", ev)
 		}
-
-		// Adjust for ExposureComp; the higher the comp, the less physical light needed
-		base -= ev.ExposureComp
 		
 		ev.EV = base
-		ev.MaxLuminance = LuminanceLookup[base]
+
+		ev.IlluminanceAtMaxExposure = illuminanceLookup[base]
 	}
 
 	return nil
