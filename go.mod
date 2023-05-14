@@ -1,4 +1,4 @@
-module github.com/abworrall/estacker
+module github.com/abworrall/eclipse-hdr
 
 go 1.20
 
@@ -11,5 +11,6 @@ require (
 	github.com/rwcarlsen/goexif v0.0.0-20190401172101-9e8deecbddbd // indirect
 	github.com/skypies/util v0.1.31 // indirect
 	golang.org/x/image v0.7.0 // indirect
+	gonum.org/v1/gonum v0.12.0 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 )
