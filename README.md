@@ -3,6 +3,8 @@
 Take a pile of photos of totality during a solar eclipse, and exposure
 stack them to get a pretty picture of the corona.
 
+![fattal02](https://github.com/abworrall/eclipse-hdr/blob/master/samples/thumb/tmo-fattal02.png)
+
 The tool works like this ...
 
 ## 1. Image alignment

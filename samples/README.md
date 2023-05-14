@@ -2,18 +2,15 @@
 
 Here is some output from each of the bundled tonemapping operators.
 
-![drago03](https://github.com/abworrall/eclipse-hdr/blob/master/samples/tmo-drago03.png)
 
-![durand](https://github.com/abworrall/eclipse-hdr/blob/master/samples/tmo-durand.png)
-
-![fattal02](https://github.com/abworrall/eclipse-hdr/blob/master/samples/tmo-fattal02.png)
-
-![icam06](https://github.com/abworrall/eclipse-hdr/blob/master/samples/tmo-icam06.png)
-
-![linear](https://github.com/abworrall/eclipse-hdr/blob/master/samples/tmo-linear.png)
-
-![reinhard05](https://github.com/abworrall/eclipse-hdr/blob/master/samples/tmo-reinhard05.png)
-
+| Tonemapper | thumbnail image |
+| -------- | ------ |
+| drago3     | ![drago03](https://github.com/abworrall/eclipse-hdr/blob/master/samples/thumb/tmo-drago03.png) |
+| durand     | ![durand](https://github.com/abworrall/eclipse-hdr/blob/master/samples/thumb/tmo-durand.png) |
+| fattal02   | ![fattal02](https://github.com/abworrall/eclipse-hdr/blob/master/samples/thumb/tmo-fattal02.png) |
+| icam06     | ![icam06](https://github.com/abworrall/eclipse-hdr/blob/master/samples/thumb/tmo-icam06.png) |
+| linear     | ![linear](https://github.com/abworrall/eclipse-hdr/blob/master/samples/thumb/tmo-linear.png) |
+| reinhard05 | ![reinhard05](https://github.com/abworrall/eclipse-hdr/blob/master/samples/thumb/tmo-reinhard05.png) |
 
 These `-width=5` images were generated from a stack of five exposures:
 
