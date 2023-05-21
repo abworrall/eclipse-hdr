@@ -32,30 +32,30 @@ type Fattal02 struct {
 	// Our extra params
 	GammaExpand    bool        // whether to perform sRGB gamma expansion on final output
 	DumpGrids      bool        // whether to write greyscale image files for the intermediate grids
-	
-	Input          hdr.Image   // HDR image
-	Output         image.Image // LDR image
-	
+
+	input          hdr.Image   // HDR image
+	output         image.Image // LDR image
+
 	// intermediate data structures; they all operate solely on a single channel, relating to luminance.
 	// They are calculated in this order.
 	logLuminance   emath.FloatGrid  // H,        luminance in log space: log(lum)
 	pyramid      []emath.FloatGrid  //           the Gaussian pyramid of H
 	gradients    []emath.FloatGrid  //           the gradients corresponding to each layer in the pyramid
-	avgGrad      []float64    //           (and the average gradient for each layer)
+	avgGrad      []float64          //           (and the average gradient for each layer)
 	attenuation    emath.FloatGrid  // PHI (FI), the 2D gradient attentuation function
 	divG           emath.FloatGrid  // DivG
 	u              emath.FloatGrid  // U,        the solution to the PDE: laplace(U) = DivG
 	outputLum      emath.FloatGrid  // L,        the exponentiated luminance, after all the gradient attenutation magic
 }
 
-func (f02 *Fattal02)Width()     int { return f02.Input.Bounds().Dx() }
-func (f02 *Fattal02)Height()    int { return f02.Input.Bounds().Dy() }
-func (f02 *Fattal02)NumLevels() int { return len(f02.pyramid) }
+func (f02 *Fattal02)width()     int { return f02.input.Bounds().Dx() }
+func (f02 *Fattal02)height()    int { return f02.input.Bounds().Dy() }
+func (f02 *Fattal02)numLevels() int { return len(f02.pyramid) }
 
+// NewDefaultFattal02 uses the default parameter settings as per the
+// `pfstmo_fattal02` command, when using the FFT solver.
 func NewDefaultFattal02(img hdr.Image) *Fattal02 {
 	return &Fattal02{
-		// The PFSTMO parameters - see https://www.mankier.com/1/pfstmo_fattal02
-		// These are the default values when using the FFT solver
 		DetailLevel: 3,
 		Noise:       0.002,
 		Alpha:       1.0,
@@ -65,44 +65,44 @@ func NewDefaultFattal02(img hdr.Image) *Fattal02 {
 		WhitePoint:  0.5,
 		Saturation:  0.8,
 
-		Input:       img,
+		input:       img,
 	}
 }
 
-// Implement mdouchement/hdr/tmo:ToneMappingOperator
+// Perform implements `github.com/mdouchement/hdr/tmo.ToneMappingOperator`
 func (f02 *Fattal02)Perform() image.Image {
-	f02.CreateLogLuminanceGrid()
-	f02.CreateGuassianPyramid()
-	f02.CalculateGradients()
-  f02.CalculateAttenuationMatrix()
-	f02.CalculateDivergence()
+	f02.createLogLuminanceGrid()
+	f02.createGuassianPyramid()
+	f02.calculateGradients()
+	f02.calculateAttenuationMatrix()
+	f02.calculateDivergence()
 
 	f02.u = fftw.SolvePdeFft(f02.divG, false)
-	f02.MaybeDumpGrid(f02.u, "006-solved-PDE", "006-solved-PDE.png")
+	f02.maybeDumpGrid(f02.u, "006-solved-PDE", "006-solved-PDE.png")
 
-	f02.CreateExponentiatedLuminance()
-	f02.FillOutputImage()
+	f02.createExponentiatedLuminance()
+	f02.fillOutputImage()
 
-	return f02.Output
+	return f02.output
 }
 
-func (f02 *Fattal02)MaybeDumpGrid(f emath.FloatGrid, comment, filename string) {
+func (f02 *Fattal02)maybeDumpGrid(f emath.FloatGrid, comment, filename string) {
 	if f02.DumpGrids {
 		f.ToImg(comment, filename)
 	}
 }
 
-func (f02 *Fattal02)CreateLogLuminanceGrid() {
+func (f02 *Fattal02)createLogLuminanceGrid() {
 	maxLum  := -100.0
 	minLum  :=  100.0
-	bounds  := f02.Input.Bounds()
+	bounds  := f02.input.Bounds()
 	width   := bounds.Dx()
 	height  := bounds.Dy()
 	lumGrid := emath.NewFloatGrid(width, height)
 
 	for x:=bounds.Min.X; x<bounds.Max.X; x++ {
 		for y:=bounds.Min.Y; y<bounds.Max.Y; y++ {
-			rgb := f02.Input.HDRAt(x, y)
+			rgb := f02.input.HDRAt(x, y)
 			xyz := hdrcolor.XYZModel.Convert(rgb)
 			_, lum, _, _ := xyz.(hdrcolor.Color).HDRXYZA()
 
@@ -124,14 +124,14 @@ func (f02 *Fattal02)CreateLogLuminanceGrid() {
 		}
 	}	
 
-	f02.MaybeDumpGrid(lumGrid, "001-luminance", "001-luminance.png")
-	f02.MaybeDumpGrid(H, "001-log(luminance)", "001-logLuminance.png")
+	f02.maybeDumpGrid(lumGrid, "001-luminance", "001-luminance.png")
+	f02.maybeDumpGrid(H, "001-log(luminance)", "001-logLuminance.png")
 	f02.logLuminance = H
 }
 
-func (f02 *Fattal02)CreateGuassianPyramid() {
-	width  := f02.Width()
-	height := f02.Height()
+func (f02 *Fattal02)createGuassianPyramid() {
+	width  := f02.width()
+	height := f02.height()
 
 	// Figure out depth
 	nLevels := 0
@@ -144,29 +144,29 @@ func (f02 *Fattal02)CreateGuassianPyramid() {
 
 	pyramid := make ([]emath.FloatGrid, nLevels)	
 	pyramid[0] = *(f02.logLuminance.Copy())
-	f02.MaybeDumpGrid(pyramid[0], "", "002-pyramid00.png")
+	f02.maybeDumpGrid(pyramid[0], "", "002-pyramid00.png")
 	
 	for k := 1;  k < nLevels; k++ {
 		lowerLayerBlurred := pyramid[k-1].GaussianBlur()
 		pyramid[k] = lowerLayerBlurred.DownSample()		
-		f02.MaybeDumpGrid(pyramid[k], "", fmt.Sprintf("002-pyramid%02d.png", k))
+		f02.maybeDumpGrid(pyramid[k], "", fmt.Sprintf("002-pyramid%02d.png", k))
 	}
 
 	f02.pyramid = pyramid
 }
 
-func (f02 *Fattal02)CalculateGradients() {
-	f02.gradients = make([]emath.FloatGrid, f02.NumLevels())
-	f02.avgGrad =   make([]float64,   f02.NumLevels())
+func (f02 *Fattal02)calculateGradients() {
+	f02.gradients = make([]emath.FloatGrid, f02.numLevels())
+	f02.avgGrad =   make([]float64,   f02.numLevels())
 	
-	for k:=0; k<f02.NumLevels(); k++ {
+	for k:=0; k<f02.numLevels(); k++ {
     f02.gradients[k], f02.avgGrad[k] = f02.pyramid[k].CalculateGradients(k)
-		f02.MaybeDumpGrid(f02.gradients[k], "", fmt.Sprintf("003-gradient%02d.png", k))
+		f02.maybeDumpGrid(f02.gradients[k], "", fmt.Sprintf("003-gradient%02d.png", k))
 	}
 }
 
-func (f02 *Fattal02)CalculateAttenuationMatrix() {
-	nLevels := f02.NumLevels()
+func (f02 *Fattal02)calculateAttenuationMatrix() {
+	nLevels := f02.numLevels()
 	phi := make([]emath.FloatGrid, nLevels)
 
 	noise := f02.Noise
@@ -209,16 +209,16 @@ func (f02 *Fattal02)CalculateAttenuationMatrix() {
       phi[k-1] = upsampled.GaussianBlur()
 		}
 
-		f02.MaybeDumpGrid(phi[k], "", fmt.Sprintf("004-attenuation%02d.png", k))
+		f02.maybeDumpGrid(phi[k], "", fmt.Sprintf("004-attenuation%02d.png", k))
 	}
 
 	f02.attenuation = phi[0]
 }
 
 
-func (f02 *Fattal02)CalculateDivergence() {
-	width  := f02.Width()
-	height := f02.Height()
+func (f02 *Fattal02)calculateDivergence() {
+	width  := f02.width()
+	height := f02.height()
 
 	H      := f02.logLuminance
 	PHI    := f02.attenuation
@@ -246,8 +246,8 @@ func (f02 *Fattal02)CalculateDivergence() {
 		}
 	}
 
-	f02.MaybeDumpGrid(Gx, "005-divGx", "005-divGx.png")
-	f02.MaybeDumpGrid(Gy, "005-divGy", "005-divGy.png")
+	f02.maybeDumpGrid(Gx, "005-divGx", "005-divGx.png")
+	f02.maybeDumpGrid(Gy, "005-divGy", "005-divGy.png")
 
   // calculate divergence
 	divG := f02.pyramid[0].NewFromThis()
@@ -263,13 +263,13 @@ func (f02 *Fattal02)CalculateDivergence() {
     }
 	}
 
-	f02.MaybeDumpGrid(divG, "005-divG", "005-divG.png")
+	f02.maybeDumpGrid(divG, "005-divG", "005-divG.png")
 	f02.divG = divG
 }
 
-func (f02 *Fattal02)CreateExponentiatedLuminance() {
-	width  := f02.Width()
-	height := f02.Height()
+func (f02 *Fattal02)createExponentiatedLuminance() {
+	width  := f02.width()
+	height := f02.height()
 	U      := f02.u
 	L      := U.NewFromThis()
 
@@ -294,30 +294,30 @@ func (f02 *Fattal02)CreateExponentiatedLuminance() {
 		}
 	}
 
-	f02.MaybeDumpGrid(L, "007-exponentiated", "007-exponentiated.png")
+	f02.maybeDumpGrid(L, "007-exponentiated", "007-exponentiated.png")
 	f02.outputLum = L
 }
 
 // Now we have the final adjusted luminance values in `f02.output`, complete
 // the tonemapping of the input image by adjust the original RGB
 // values with the new luminance
-func (f02 *Fattal02)FillOutputImage() {
-	width := f02.Width()
-	height := f02.Height()
+func (f02 *Fattal02)fillOutputImage() {
+	width := f02.width()
+	height := f02.height()
 
 	MaxOf2 := func(a, b float64) float64 {
 		if a > b { return a }
 		return b
 	}
 
-	out := image.NewRGBA64(f02.Input.Bounds())
+	out := image.NewRGBA64(f02.input.Bounds())
 
 	// C_out = (C_in / L_before)^s * L_after  (C are colours, L are luminances, s is magic number)
 	for y:=0; y<height; y++ {
 		for x:=0; x<width; x++ {			
 			epsilon  := 1.0 * 1e-4
 
-			rgb      := f02.Input.HDRAt(x, y).(hdrcolor.RGB)
+			rgb      := f02.input.HDRAt(x, y).(hdrcolor.RGB)
 			xyz      := hdrcolor.XYZModel.Convert(rgb).(hdrcolor.XYZ)
 
 			C_in     := rgb
@@ -344,6 +344,6 @@ func (f02 *Fattal02)FillOutputImage() {
 		}
 	}
 
-	f02.Output = out
+	f02.output = out
 }
 

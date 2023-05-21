@@ -21,7 +21,7 @@ import(
 func ImgDiff(cfg Config, l1, l2 *Layer, passName string, xform AlignmentTransform) float64 {
 	totErr   := 0.0
 	nErr     := 0
-	bounds   := l1.LoadedImage.Bounds()
+	bounds   := cfg.InputArea
 
 	tooLow  := uint32(0x0200)
 	tooHigh := uint32(0x8000)

@@ -5,7 +5,7 @@ stack them to get a pretty picture of the corona.
 
 ![fattal02](https://github.com/abworrall/eclipse-hdr/blob/master/samples/thumb/tmo-fattal02.png)
 
-The tool works like this ...
+It works like this ...
 
 ## 1. Image alignment
 
@@ -13,13 +13,13 @@ If you stuck your camera on a tripod and took a bunch of
 exposure-bracketed photos during totality, then the sun & moon will
 have moved a little between each frame. The alignment stage figures
 out how to compensate for this, trying various translations and
-rotations to find where the images agree the most. It provides
+rotations to find where the images agree the most. It performs
 sub-pixel alignment, using Catmull Rom interpolation as needed.
 
 ## 2. Image fusion
 
-Once the input images have beenb aligned, we fuse them into a single
-HDR (high dynamic range) image. This accounts for the differing
+Once the input images have been aligned, we fuse them into a single
+HDR (high dynamic range) image. This normalizes across the differing
 exposure values used for the images.
 
 It generates a `.hdr` image file, which can be used with other HDR
@@ -35,7 +35,7 @@ mapping.
 
 We bundle a number of tone-mapping operators: drago03, durand,
 fattal02, icam06, reinhard05, and a linear operator. You can see some
-output in [samples/](samples/README.md)
+output in [samples/](samples/README.md).
 
 # How to use it
 
@@ -85,7 +85,7 @@ to disc, each one a luminance diff.
 
 Your config file will end up with alignment info, and also color
 development info (the `AsShotNeutral` and `ForwardMatrix` from the DNG
-file). It will look like this:
+file). It should look something like this:
 
     asshotneutral:
     - 0.501
@@ -134,18 +134,17 @@ You only want one config file to be loaded, the last one overwrites.
 The outputs are all centered on the eclipse itself, are square, and
 are sized in terms of lunar diameters via `-width`.
 
-### HDR, suitable for PhotoShop, PFSTMO, etc
+### Fused HDR image, suitable for PhotoShop, PFSTMO, etc
 
-The main output is `fused.hdr`, a high-dynamic range file
-combining all the exposures you can process in other softare.
+The main output is `fused.hdr`, a high-dynamic range file combining
+all the exposures. You can process this further in standard software.
 
-### Tonemapped LDR files.
+### Tonemapped LDR images
 
 It will also generate a PNG file for each supported tonemapping
-operator, e.g. `200-fattal02.png`.
+operator, e.g. `tmo-fattal02.png`.
 
 - fattal02 seems the most reliable, though it amplifies noise a bit
-- icam06 seems to use a different white reference than D65, so is pink
+- icam06 seems to use a different white reference, so is pinkish and warm
 - linear always looks dim, that's why we need fancy tonemappers
 - reinhard05 looks great with width<=3, but goes wrong when there is too much dark sky
-

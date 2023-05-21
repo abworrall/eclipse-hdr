@@ -154,16 +154,16 @@ func ColToGrayU16(c color.Color) uint16 {
 
 //// All this dci stuff is for debugging - dumping out an image that overlays all the lunar limbs
 
-var dci DebugCompositeImage
+var dci debugCompositeImage
 
-type DebugCompositeImage struct {
+type debugCompositeImage struct {
 	fillMap *image.RGBA
 	currFrame int
 	center image.Point
 	maxFrames int
 }
 
-func  (dci *DebugCompositeImage)PickColor() color.RGBA64 {
+func  (dci *debugCompositeImage)PickColor() color.RGBA64 {
 	plotColors := []color.RGBA64{
 		color.RGBA64{0xa000, 0, 0, 0xffff},
 		color.RGBA64{0, 0xa000, 0, 0xffff},
@@ -176,7 +176,7 @@ func  (dci *DebugCompositeImage)PickColor() color.RGBA64 {
 	return plotColors[dci.currFrame % len(plotColors)]
 }
 
-func (dci *DebugCompositeImage)StartNewFrame(bounds image.Rectangle, center image.Point) {
+func (dci *debugCompositeImage)StartNewFrame(bounds image.Rectangle, center image.Point) {
 	if dci.fillMap == nil {
 		dci.fillMap = image.NewRGBA(bounds)
 		dci.center = center
@@ -187,7 +187,7 @@ func (dci *DebugCompositeImage)StartNewFrame(bounds image.Rectangle, center imag
 	dci.PlotMarker(center)
 }
 
-func (dci *DebugCompositeImage)Plot(p image.Point) {
+func (dci *debugCompositeImage)Plot(p image.Point) {
 	thetaRadians := math.Atan2(float64(p.Y-dci.center.Y), float64(p.X-dci.center.X))
 	thetaDegrees := 180 + thetaRadians * 180.0 / math.Pi
 	segment := int(thetaDegrees / 12)
@@ -197,7 +197,7 @@ func (dci *DebugCompositeImage)Plot(p image.Point) {
 	dci.fillMap.Set(p.X, p.Y, dci.PickColor())
 }
 
-func (dci *DebugCompositeImage)PlotRectangle(r image.Rectangle) {
+func (dci *debugCompositeImage)PlotRectangle(r image.Rectangle) {
 	col := dci.PickColor()
 	for x:=r.Min.X; x<=r.Max.X; x++ {
 		dci.fillMap.Set(x, r.Min.Y, col)
@@ -209,12 +209,12 @@ func (dci *DebugCompositeImage)PlotRectangle(r image.Rectangle) {
 	}
 }
 
-func (dci *DebugCompositeImage)PlotMarker(p image.Point) {
+func (dci *debugCompositeImage)PlotMarker(p image.Point) {
 	dci.PlotRectangle(image.Rectangle{image.Point{p.X-2, p.Y-2}, image.Point{p.X+2, p.Y+2}})
 	dci.PlotRectangle(image.Rectangle{image.Point{p.X-4, p.Y-4}, image.Point{p.X+4, p.Y+4}})
 	dci.PlotRectangle(image.Rectangle{image.Point{p.X-6, p.Y-6}, image.Point{p.X+6, p.Y+6}})
 }
 
-func (dci *DebugCompositeImage)Flush() {
+func (dci *debugCompositeImage)Flush() {
 	WritePNG(dci.fillMap, "010-lunarlimb-composite.png")
 }

@@ -1,8 +1,20 @@
 package fftw
 
-// Wraps the fftw3 library for use in Golang, specifically as needed
-// to solve a particular PDE as per the fattal02 implementation in
-// PFSTMO.
+// #cgo LDFLAGS: -lm -lfftw3
+// #include <fftw3.h>
+import "C"
+
+import(
+	// "log"
+	"math"
+	"unsafe"
+
+	"github.com/abworrall/eclipse-hdr/pkg/emath"
+)
+
+// FftwPlan wraps the fftw3 library for use in Golang, specifically as
+// needed to solve a particular PDE as per the fattal02 implementation
+// in PFSTMO.
 //
 // There are some golang bindings for FFTW3 around, but none that exposed
 // the function fftw_plan_r2r_2d() that fattal02 was using. But cgo is awesome
@@ -17,19 +29,7 @@ package fftw
 // float64, read https://www.fftw.org/fftw3_doc/Precision.html and
 // make changes to the library namein LDFLAGS, and all the `fftw_`
 // prefixes to C types and functions in this file.
-
-// #cgo LDFLAGS: -lm -lfftw3
-// #include <fftw3.h>
-import "C"
-
-import(
-	// "log"
-	"math"
-	"unsafe"
-
-	"github.com/abworrall/eclipse-hdr/pkg/emath"
-)
-
+//
 type FftwPlan struct {
 	fftw_p C.fftw_plan // Creation & destruction of this not thread safe, would need a mutex
 }
@@ -162,7 +162,7 @@ func make_compatible_boundary(F emath.FloatGrid) {
   }
 }
 
-// solves Laplace U = F with Neumann boundary conditions
+// Solves Laplace U = F with Neumann boundary conditions
 // if adjust_bound is true then boundary values in F are modified so that
 // the equation has a solution, if adjust_bound is set to false then F is
 // not modified and the equation might not have a solution but an

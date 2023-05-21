@@ -25,7 +25,8 @@ type Config struct {
 	Tonemapper                  string
 	FuserLuminance              float64  // a var used by the fuser
 	
-	// Values we populate as we progress
+	// Cloned from the FusedImage, to be more available. FIXME.
+	InputArea                   image.Rectangle
 	OutputArea                  image.Rectangle
 }
 

@@ -31,6 +31,11 @@ func init() {
 	flag.Float64Var(&fFuserLuminance, "fuserluminance", 0.8, "layer discarded during fusion if pixel>this (0.0->1.0) ")
 	flag.Parse()
 
+	// If finetuning, pick smaller images
+	if fDoFineTunedAlignment {
+		fOutputWidth = 2.0
+	}
+	
 	log.Printf("eclipse-hdr starting\n")
 }
 
@@ -50,7 +55,7 @@ func main() {
 	img.Config.FuserLuminance = fFuserLuminance
 
 	if img.Verbosity > 0 {
-		log.Printf("Final configuration:-\n\n%s\n", img.Config.AsYaml())
+		log.Printf("Initial configuration:-\n\n%s\n", img.Config.AsYaml())
 	}
 
 	img.Align()

@@ -71,12 +71,17 @@ func (fi *FusedImage)Align() {
 			fi.Layers[i].LunarLimb = FindLunarLimb(fi.Config, fi.Layers[i].LoadedImage)
 		}
 		fi.InputArea  = fi.CalculateInputArea()
-
+		fi.Config.InputArea = fi.InputArea // aligner needs this
+		
 		// Figure out the transforms to map points from the base/first image to the other images
 		for i:=1; i<len(fi.Layers); i++ {
 			AlignLayer(fi.Config, &fi.Layers[0], &fi.Layers[i])
 		}
 
+		if fi.Config.DoFineTunedAlignment {
+			log.Printf("Fine tune alignments:-\n\n%s\n", fi.Config.AsYaml())
+		}
+		
 	} else {
 		fi.InputArea = fi.Layers[0].Image.Bounds() // default to whole image
 	}

@@ -64,8 +64,9 @@ func (cn *CameraNative)AdjustIllumAtMax(newIllumAtMax float64) {
 	cn.IllumAtMax = newIllumAtMax
 }
 
-// ApplyAsShotNeutral performs white balancing. After this operation, the color
-// is no longer in the CameraNative color space, so return as arbitrary RGB.
+// ApplyAsShotNeutral performs white balancing. After this operation,
+// the color is no longer CameraNative, it is camera-neutral (i.e.
+// white balanced), so return as arbitrary RGB.
 func ApplyAsShotNeutral(cn CameraNative, asShotNeutral emath.Vec3) hdrcolor.RGB {
 	return hdrcolor.RGB{
 		R: cn.RGB.R / asShotNeutral[0],

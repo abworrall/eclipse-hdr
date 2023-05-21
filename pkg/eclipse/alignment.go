@@ -172,6 +172,8 @@ func AlignLayerFine(cfg Config, l1, l2 *Layer, baseXform AlignmentTransform) Ali
 	}
 	best = scoreXFormsConcurrently(cfg, l1, l2, xforms, "pass2b")
 
+	if best.RotateByDeg < 0.0001 { best.RotateByDeg = 0.0 }
+	
 	log.Printf("Align finetune: orig  %s\n", baseXform)
 	log.Printf("Align finetune: final %s\n", best)
 	return best
