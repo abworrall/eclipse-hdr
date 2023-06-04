@@ -89,7 +89,8 @@ func FuseByAverage(cfg Config, p *Pixel) {
 // - AsShotNeutral (the white balance correction)
 // - ForwardMatrix (the camera's color correction matrix)
 func DevelopByDNG(cfg Config, p *Pixel) {
-	xyzD50 := p.Fused.DevelopDNG(cfg.AsShotNeutral, cfg.ForwardMatrix)
+	
+	xyzD50 := p.Fused.ToPCS(cfg.CameraToPCS)
 	sRgb   := ecolor.XYZToSRGB(xyzD50)
 
 	// In eclipse shots, there are lots of near-black pixels. The above
@@ -104,7 +105,7 @@ func DevelopByDNG(cfg Config, p *Pixel) {
 }
 
 func DevelopByWhiteBalanceOnly(cfg Config, p *Pixel) {
-	wbRgb  := ecolor.ApplyAsShotNeutral(p.Fused, cfg.AsShotNeutral)
+	wbRgb  := ecolor.ApplyCameraWhite(p.Fused, cfg.CameraWhite)
 	p.DevelopedRGB = wbRgb
 }
 
@@ -115,7 +116,7 @@ func DevelopByNone(cfg Config, p *Pixel) {
 // DevelopAsLayer is for debugging - it colors the pixel based on
 // which layer it came from. (White balances it too)
 func DevelopByLayer(cfg Config, p *Pixel) {
-	wbRgb  := ecolor.ApplyAsShotNeutral(p.Fused, cfg.AsShotNeutral)
+	wbRgb  := ecolor.ApplyCameraWhite(p.Fused, cfg.CameraWhite)
 	r, g, b, _ := wbRgb.HDRRGBA()
 
 	switch p.LayerNumber {

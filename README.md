@@ -1,7 +1,7 @@
 # eclipse-hdr
 
-Take a pile of photos of totality during a solar eclipse, and exposure
-stack them to get a pretty picture of the corona.
+Takes a pile of DNG photos of totality during a solar eclipse, and
+exposure stack them to get a pretty picture of the corona.
 
 ![fattal02](https://github.com/abworrall/eclipse-hdr/blob/master/samples/thumb/tmo-fattal02.png)
 
@@ -11,9 +11,10 @@ It works like this ...
 
 If you stuck your camera on a tripod and took a bunch of
 exposure-bracketed photos during totality, then the sun & moon will
-have moved a little between each frame. The alignment stage figures
-out how to compensate for this, trying various translations and
-rotations to find where the images agree the most. It performs
+have moved a little between each frame.
+
+The alignment stage compensates for this, trying various translations
+and rotations to find where the images agree the most. It performs
 sub-pixel alignment, using Catmull Rom interpolation as needed.
 
 ## 2. Image fusion
@@ -35,89 +36,118 @@ mapping.
 
 We bundle a number of tone-mapping operators: drago03, durand,
 fattal02, icam06, reinhard05, and a linear operator. You can see some
-output in [samples/](samples/README.md).
+output in [samples/](samples/README.md). (Huge thanks to
+github.com/mdouchement/hdr for most of these !)
 
 # How to use it
 
+The biggest prep step is building the DNG SDK on your system - Adobe's
+library is too hairy to be fully buildable as a Golang package.
+Luckily that's only a few commands, details here:
+https://github.com/abworrall/go-dng#using-the-sdk-from-go
+
 Prep steps:
 
-    sudo apt-get install build-essential libfftw3-dev
+    # Install DNG SDK: https://github.com/abworrall/go-dng#using-the-sdk-from-go
+
+    # Now, you can build eclipse-hdr
+    sudo apt install build-essential libfftw3-dev
     go install github.com/abworrall/eclipse-hdr/cmd/eclipse-hdr@latest
     ~/go/bin/eclipse-hdr -h
 
 Usage:
 
-    eclipse-hdr images/                  # load everything in the dir
-    eclipse-hdr images/1234.tif          # load selected files
-    eclipse-hdr -finetunealign images/   # generate fine-tuned alignment
-    eclipse-hdr images/ ./conf.yaml      # also load a config file
+    eclipse-hdr images/                   # load everything in the dir
+    eclipse-hdr images/1234.DNG ...       # load specific file(s)
+    eclipse-hdr -finetunealign images/    # generate fine-tuned alignment (takes ages)
+    eclipse-hdr images/ ./conf.yaml       # also load a config file
 
     eclipse-hdr -developer=layer images/  # see which layers get used
     eclipse-hdr -width=1.2 images/        # generate images not much wider than the sun
 
-## Prepping your photo files
+## Supported photo files
 
-The input should be a set of TIFF files (16 bits per channel), that
-have complete EXIF metadata about the exposure. The TIFF files should
-contain linear (unadjusted) image data.
+This tool expects to see DNG files (Adobe Digital Negative). As well
+as pixel data, and exposure metadata, DNGs provide matrices for color
+correction and white balance. Plus we can access them as simple
+linearized sensor data (DNG's "stage 3"), which is what we need for
+image fusion.
 
-You want to use Adobe's `dng_validate.exe` tool to output stage 3
-data, and then `exiftool.exe` to copy over the EXIF metadata. For more
-detail, go [here](pkg/ecolor/README.md).
+### Using TIFFs instead
 
-Take note of your `AsShotNeutral` and `ForwardMatrix` info; you'll
-need it for `conf.yaml`.
+If for some reason you can't use DNGs, then you can make do with TIFF
+files and some color configuration. The TIFF files should contain
+linear (unadjusted) image data, and the easiest way to get those is
+using Adobe's `dng_validate.exe` tool to output stage 3 data.
+
+You then need to use `exiftool.exe` to copy over the EXIF metadata.
+For more detail, go [here](pkg/ecolor/README.md).
+
+Take note of your `AsShotNeutral` and `ForwardMatrix` info that gets
+printed by `dng_validate.exe -v`; you'll need it for `conf.yaml`.
+
+Note you can build `dng_validate.exe` for linux; details at
+https://github.com/abworrall/go-dng#building-the-sdk-on-linux
 
 ## Alignment fine-tuning
 
 By default, the alignment is pretty coarse - it just lines up the dark
 moon in each photo. The `-alignfinetune` argument does much more work,
 trying hundreds of possible alignments and scoring how well the images
-agree. This can take minutes to hours, so you only want to do it once.
+agree. This can take many hours, so you only want to do it once, and
+do it overnight.
 
 When it finishes, it will print out some configuration. You should
-save this for your conf.yaml (see below).
+save this for your `conf.yaml` (see below).
 
 If you run in verbose mode (`-v=2`), it will write hundreds of images
-to disc, each one a luminance diff.
+to disc, each one a luminance diff of a proposed alignment.
 
 ## conf.yaml
 
-Your config file will end up with alignment info, and also color
-development info (the `AsShotNeutral` and `ForwardMatrix` from the DNG
-file). It should look something like this:
+Mostly you should put your alignment info in here, as it takes so
+long to compute.
 
-    asshotneutral:
-    - 0.501
-    - 1
-    - 0.7014
-    forwardmatrix:
-    - 0.6227
-    - 0.3389
-    - 0.0026
-    - 0.2548
-    - 0.9378
-    - -0.1926
-    - 0.0156
-    - -0.133
-    - 0.9425
-    alignments:
-      5671-5667:
-        name: 5671-5667
-        translatebyx: 11.75
-        translatebyy: -16.5
-        rotationcenterx: 3269
-        rotationcentery: 1344
-        rotatebydeg: 3.191891195797325e-16
-        errormetric: 21455.073216304932
-      5671-5668:
-        name: 5671-5668
-        translatebyx: 8.5
-        translatebyy: -6.25
-        rotationcenterx: 3269
-        rotationcentery: 1344
-        rotatebydeg: 3.191891195797325e-16
-        errormetric: 24212.739338470437
+If you're using TIFF files, you'll also need your color correction
+info - the manual overrides for AsShotNeutral and ForwardMatrix that
+you've figured out some other way.
+
+```yaml    
+# Reuse expensive-to-compute fine alignments
+alignments:
+  5671-5667:
+    name: 5671-5667
+    translatebyx: 11.75
+    translatebyy: -16.5
+    rotationcenterx: 3269
+    rotationcentery: 1344
+    rotatebydeg: 3.191891195797325e-16
+    errormetric: 21455.073216304932
+  5671-5668:
+    name: 5671-5668
+    translatebyx: 8.5
+    translatebyy: -6.25
+    rotationcenterx: 3269
+    rotationcentery: 1344
+    rotatebydeg: 3.191891195797325e-16
+    errormetric: 24212.739338470437
+
+# Needed for TIFF files
+manualoverrideasshotneutral:
+- 0.501
+- 1
+- 0.7014
+manualoverrideforwardmatrix:
+- 0.6227
+- 0.3389
+- 0.0026
+- 0.2548
+- 0.9378
+- -0.1926
+- 0.0156
+- -0.133
+- 0.9425
+```
 
 Note the forwardmatrix is a row at a time; the one above corresponds
 to this output from `dng_validate.exe`:

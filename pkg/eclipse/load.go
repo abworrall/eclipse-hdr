@@ -10,9 +10,40 @@ import (
 
 	"github.com/rwcarlsen/goexif/exif"
 	"golang.org/x/image/tiff"
+
+	"github.com/abworrall/go-dng/pkg/dng"
+
+	"github.com/abworrall/eclipse-hdr/pkg/ecolor"
+	"github.com/abworrall/eclipse-hdr/pkg/emath"
 )
 
+
+
 func (fi *FusedImage)LoadFilesAndDirs(args ...string) (error) {
+	if err := fi.loadThings(args...); err != nil {
+		return err
+	}
+
+	// Now everything is loaded, tidy up config
+	if len(fi.Layers) > 0 && fi.Layers[0].CameraToPCS[1] != 0.0 {
+		log.Printf("Taking CameraWhite/CameraToPCS from DNG data in %s\n", fi.Layers[0].Filename())
+		fi.Config.CameraWhite = fi.Layers[0].CameraWhite
+		fi.Config.CameraToPCS = fi.Layers[0].CameraToPCS
+
+	} else if fi.Config.ManualOverrideForwardMatrix[0] != 0.0 {
+		log.Printf("Taking CameraWhite/CameraToPCS from manual overrides in config.yaml\n")
+		fi.Config.CameraWhite = fi.Config.ManualOverrideAsShotNeutral
+		fi.Config.CameraToPCS = ecolor.MakeCameraToPCS(fi.Config.ManualOverrideAsShotNeutral,
+			fi.Config.ManualOverrideForwardMatrix)
+
+	} else {
+		return fmt.Errorf("No color correction info; need DNGs, or ManualOverride{AsShotNeutral,ForwardMatrix} in conf.yaml")
+	}
+
+	return nil
+}
+
+func (fi *FusedImage)loadThings(args ...string) (error) {
 	for _, arg := range args {
 		item, err := os.Stat(arg)
 
@@ -28,7 +59,7 @@ func (fi *FusedImage)LoadFilesAndDirs(args ...string) (error) {
 				return fmt.Errorf("readdir %s: %v", arg, err)
 			}
 			for _, content := range contents {
-				if err := fi.LoadFilesAndDirs(filepath.Join(arg, content.Name())); err != nil {
+				if err := fi.loadThings(filepath.Join(arg, content.Name())); err != nil {
 					return fmt.Errorf("load %s: %v", arg, err)
 				}
 			}
@@ -43,6 +74,7 @@ func (fi *FusedImage)LoadFilesAndDirs(args ...string) (error) {
 	return nil
 }
 
+	
 func (fi *FusedImage)loadFile(filename string) error {
 	ext := filepath.Ext(filename)
 
@@ -52,6 +84,13 @@ func (fi *FusedImage)loadFile(filename string) error {
 		layer, err := loadTIFF(filename)
 		if err != nil {
 			return fmt.Errorf("Loading %s as TIFF failed: %v", filename, err)
+		}
+		fi.AddLayer(layer)
+
+	case ".dng":
+		layer, err := loadDNG(filename)
+		if err != nil {
+			return fmt.Errorf("Loading %s as DNG failed: %v", filename, err)
 		}
 		fi.AddLayer(layer)
 
@@ -76,6 +115,34 @@ func loadConfig(filename string) (Config, error) {
 	return newConfigFromYaml(contents)
 }
 
+func loadDNG(filename string) (Layer, error) {
+	l := Layer{LoadFilename: filename}
+
+	img := dng.Image{ImageKind:dng.ImageStage3}
+	if err := img.Load(filename); err != nil {
+		return Layer{}, err
+	}
+
+	fnum := img.ExifFNumber()
+	exposure := img.ExifExposureTime()
+
+	l.ExposureValue.ISO = img.ExifISO()
+	l.ApertureX10 = fNumberToX10(int(fnum[0]), int(fnum[1]))
+	l.ShutterSpeed = rat64{int64(exposure[0]), int64(exposure[1])}
+
+	l.CameraWhite = emath.Vec3(img.CameraWhite())
+	l.CameraToPCS = emath.Mat3(img.CameraToPCS())
+	
+	if err := l.ExposureValue.Validate(); err != nil {
+		return l, fmt.Errorf("image '%s' Invalid EV: %v", filename, err)
+	}
+
+	l.LoadedImage = img
+	l.Image = l.LoadedImage // Default to no alignment (needed for first image ?) - FIXME, this is messy
+
+	return l, nil
+}
+
 func loadTIFF(filename string) (Layer, error) {
 	l := Layer{LoadFilename: filename}
 
@@ -87,34 +154,28 @@ func loadTIFF(filename string) (Layer, error) {
 		return l, fmt.Errorf("exif parsing '%s': %v", filename, err)
 
 	} else {
-		if tag,err := ex.Get(exif.ISOSpeedRatings); err != nil {
+		if tag, err := ex.Get(exif.ISOSpeedRatings); err != nil {
 			return l, fmt.Errorf("exif ISO '%s': %v", filename, err)
-		} else if val,err := tag.Int64(0); err != nil {
+		} else if val, err := tag.Int64(0); err != nil {
 			return l, fmt.Errorf("exif ISO '%s': %v", filename, err)
 		} else {
-			l.ExposureValue.ISO = val
+			l.ExposureValue.ISO = int(val)
 		}
 
-		if tag,err := ex.Get(exif.FNumber); err != nil {
+		if tag, err := ex.Get(exif.FNumber); err != nil {
 			return l, fmt.Errorf("exif FNumber '%s': %v", filename, err)
-		} else if num,denom,err := tag.Rat2(0); err != nil {
+		} else if num, denom, err := tag.Rat2(0); err != nil {
 			return l, fmt.Errorf("exif FNumber '%s': %v", filename, err)
 		} else {
-			switch denom {
-			case 10: l.ApertureX10 = num
-			case  5: l.ApertureX10 = num * 2
-			case  1: l.ApertureX10 = num * 10
-			default:
-				return l, fmt.Errorf("exif FNumber denom '%s' unhandled '%d/%d'", filename, num, denom)
-			}
+			l.ApertureX10 = fNumberToX10(int(num), int(denom))
 		}
 
-		if tag,err := ex.Get(exif.ExposureTime); err != nil {
+		if tag, err := ex.Get(exif.ExposureTime); err != nil {
 			return l, fmt.Errorf("exif ExposureTime '%s': %v", filename, err)
-		} else if num,denom,err := tag.Rat2(0); err != nil {
+		} else if num, denom, err := tag.Rat2(0); err != nil {
 			return l, fmt.Errorf("exif ExposureTime '%s': %v", filename, err)
 		} else {
-			l.ShutterSpeed = rational{num,denom}
+			l.ShutterSpeed = rat64{num,denom}
 		}
 
 		// Note: we ignore Exposure Compensation, as it is informational. The
@@ -132,10 +193,21 @@ func loadTIFF(filename string) (Layer, error) {
 		return l, fmt.Errorf("tiff loading '%s': %v", filename, err)
 	} else {
 		l.LoadedImage = img
-		l.Image = l.LoadedImage // Default to no alignment
+		l.Image = l.LoadedImage // Default to no alignment (needed for first image ?)
 	}
 	
 	return l, nil
+}
+
+func fNumberToX10(num, denom int) int {
+	switch denom {
+	case 10: return num
+	case  5: return num * 2
+	case  1: return num * 10
+	default:
+		panic(fmt.Sprintf("exif FNumber denom unhandled '%d/%d'", num, denom))
+	}
+	return -1
 }
 
 /* Example EXIF dump from a 16-bit TIFF exported by lightroom from a DNG imported from a Nikon Df.

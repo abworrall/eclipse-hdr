@@ -17,16 +17,12 @@ import(
 // FusedImage holds the image layers, and fuses them into a single
 // image. Implements the image.Image interface.
 type FusedImage struct {
-	Layers           []Layer // Ordered, ascending EV (descending "number of photons needed to fully expose")
 	Config
-
-	InputArea          image.Rectangle  // Which pixels we care about in the (aligned) source images
-	OutputArea         image.Rectangle  // The bounding box for the output
-
-	Pixels           []Pixel
+	Layers   []Layer // Ordered, ascending EV (descending "number of photons needed to fully expose")
+	Pixels   []Pixel
 }
 
-var DebugPixels = []image.Point{}
+var DebugPixels = []image.Point{} // Things in here get dumped in detail
 
 // Implement image.Image
 func (fi FusedImage)ColorModel() color.Model       { return hdrcolor.RGBModel }
@@ -64,6 +60,10 @@ func (fi *FusedImage)AddLayer(l Layer) {
 // Align does all the work to figure out how to align the various
 // layers, and generates the final transformed image for each layer.
 func (fi *FusedImage)Align() {
+	if len(fi.Layers) == 0 {
+		return
+	}
+
 	log.Printf("Aligning image layers")
 
 	if fi.Config.DoEclipseAlignment {
@@ -72,7 +72,7 @@ func (fi *FusedImage)Align() {
 		}
 		fi.InputArea  = fi.CalculateInputArea()
 		fi.Config.InputArea = fi.InputArea // aligner needs this
-		
+
 		// Figure out the transforms to map points from the base/first image to the other images
 		for i:=1; i<len(fi.Layers); i++ {
 			AlignLayer(fi.Config, &fi.Layers[0], &fi.Layers[i])

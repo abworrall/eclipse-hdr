@@ -2,7 +2,10 @@ module github.com/abworrall/eclipse-hdr
 
 go 1.20
 
+// replace github.com/abworrall/go-dng => ../go-dng
+
 require (
+	github.com/abworrall/go-dng v0.0.0-20230601173813-8760bfaafc38 // indirect
 	github.com/codahale/hdrhistogram v0.0.0-20161010025455-3a0bb77429bd // indirect
 	github.com/fogleman/gg v1.3.0 // indirect
 	github.com/golang/freetype v0.0.0-20170609003504-e2365dfdc4a0 // indirect

@@ -80,7 +80,7 @@ func ImgDiff(cfg Config, l1, l2 *Layer, passName string, xform AlignmentTransfor
 func col2Y(cfg Config, c color.Color, ev, evMax ExposureValue) float64 {
 	cn := ecolor.NewCameraNative(c, ev.IlluminanceAtMaxExposure)
 	cn.AdjustIllumAtMax(evMax.IlluminanceAtMaxExposure)
-	xyz := cn.DevelopDNG(cfg.AsShotNeutral, cfg.ForwardMatrix)
+	xyz := cn.ToPCS(cfg.CameraToPCS)
 
 	return xyz.Y
 }

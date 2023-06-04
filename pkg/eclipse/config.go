@@ -11,21 +11,23 @@ import(
 type Config struct {
 	Verbosity                   int
 	
-	AsShotNeutral               emath.Vec3
-	ForwardMatrix               emath.Mat3
+	ManualOverrideAsShotNeutral emath.Vec3   // A white/neutral color in camera native RGB space
+	ManualOverrideForwardMatrix emath.Mat3   // Maps white-balanced camera native RGB into XYZ(D50).
 
 	DoEclipseAlignment          bool
 	DoFineTunedAlignment        bool
-	Alignments                  map[string]AlignmentTransform
-
 	OutputWidthInSolarDiameters float64
-	
+
 	Fuser                       string
 	Developer                   string
 	Tonemapper                  string
 	FuserLuminance              float64  // a var used by the fuser
-	
-	// Cloned from the FusedImage, to be more available. FIXME.
+
+	Alignments                  map[string]AlignmentTransform
+
+	// Values we figure out elsewhere, and put here for access by rest of app
+	CameraWhite                 emath.Vec3       // From a DNG file Layer{}, or overrides
+	CameraToPCS                 emath.Mat3       // From a DNG file Layer{}, or overrides
 	InputArea                   image.Rectangle
 	OutputArea                  image.Rectangle
 }
@@ -46,16 +48,6 @@ func (c Config)AsYaml() string {
 
 func NewConfig() Config {
 	return Config{
-		// These values are found in the output of `dng_validate.exe -v`.
-		// You want to pick the ForwardMatrix that corresponds to the D65
-		// illuminant. These default values will be overriden by the
-		// config.yaml
-		AsShotNeutral: emath.Vec3{0.5010, 1.0000, 0.7014},
-		ForwardMatrix: emath.Mat3{
-			0.6227,   0.3389,   0.0026,
-			0.2548,   0.9378,  -0.1926,
-			0.0156,  -0.1330,   0.9425,
-		},
 		Alignments: map[string]AlignmentTransform{},
 	}
 }

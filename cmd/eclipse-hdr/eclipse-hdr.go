@@ -35,11 +35,12 @@ func init() {
 	if fDoFineTunedAlignment {
 		fOutputWidth = 2.0
 	}
-	
+
 	log.Printf("eclipse-hdr starting\n")
 }
 
 func main() {
+
 	img := eclipse.NewFusedImage()
 	if err := img.LoadFilesAndDirs(flag.Args()...); err != nil {
 		log.Fatal(err)
@@ -54,7 +55,7 @@ func main() {
 	img.Config.Verbosity = fVerbosity
 	img.Config.FuserLuminance = fFuserLuminance
 
-	if img.Verbosity > 0 {
+	if img.Config.Verbosity > 0 {
 		log.Printf("Initial configuration:-\n\n%s\n", img.Config.AsYaml())
 	}
 
