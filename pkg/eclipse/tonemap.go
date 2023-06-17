@@ -59,9 +59,11 @@ func (fi *FusedImage)SetupTonemapper(name string) tmo.ToneMappingOperator {
 	case "fattal02":
 		op := fattal02.NewDefaultFattal02(fi)
 		op.WhitePoint  = 0.00001 // We want as close to zero overexposed pixels	as we can get
-		op.DetailLevel = 4       // <3, attenuation grids retains and highlights noise
+		//op.DetailLevel = 1       // If <3, attenuation grids retain and highlight noise
 		op.GammaExpand = true    // image comes out too dark otherwise
-		//op.DumpGrids   = true
+		if fi.Config.Verbosity > 0 {
+			op.DumpGrids   = true
+		}
 		return op
 
 	case "icam06":

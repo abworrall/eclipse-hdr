@@ -106,31 +106,33 @@ func (ev ExposureValue)String() string {
 }
 
 func (ev *ExposureValue)Validate() error {
-	// We know that f/5.6, at 1/4000, is EV=17; figure how we differ from this in stops.
-	apAdj := closestApertureIndex(56)                 - closestApertureIndex(int(ev.ApertureX10))
+	// We know that f/2.8, at 1/4000, is EV=15; figure how we differ from this in stops.
+	apAdj := -1 * (closestApertureIndex(28) - closestApertureIndex(int(ev.ApertureX10)))
 	ssAdj := closestShutterSpeedIndex(rat64{1, 4000}) - closestShutterSpeedIndex(ev.ShutterSpeed)
-
-	base := 17 - apAdj - ssAdj
-	if base < 6 || base > 18 {
-		return fmt.Errorf("Exposure info looks suspicous, base EV=%d: %v\n", base, ev)
-	}
 
 	// Adjust for ISO; the higher the ISO, the less physical light
 	// needed to fully expose.
+	isoAdj := 0
 	switch ev.ISO {
 	case   100: // do nothing
-	case   200: base -= 1
-	case   400: base -= 2
-	case   800: base -= 3
-	case  1600: base -= 4
-	case  3200: base -= 5
-	case  6400: base -= 6
-	case 12800: base -= 7
+	case   200: isoAdj = -1
+	case   400: isoAdj = -2
+	case   800: isoAdj = -3
+	case  1600: isoAdj = -4
+	case  3200: isoAdj = -5
+	case  6400: isoAdj = -6
+	case 12800: isoAdj = -7
 	default: return fmt.Errorf("(%s) had unhandled ISO", ev)
 	}
-		
-	ev.EV = base
-	ev.IlluminanceAtMaxExposure = illuminanceLookup[base]
+
+	ev.EV = 15 + apAdj + ssAdj + isoAdj
+
+	if ev.EV < 6 || ev.EV > 18 {
+		return fmt.Errorf("Exposure info looks suspicous, EV=%d: %v\nspAdj=%d, ssAdj=%d, isoAdj=%d\n",
+			ev.EV, ev, apAdj, ssAdj, isoAdj)
+	}
+
+	ev.IlluminanceAtMaxExposure = illuminanceLookup[ev.EV]
 
 	return nil
 }
